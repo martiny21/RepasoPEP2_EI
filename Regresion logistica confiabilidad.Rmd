@@ -1,0 +1,116 @@
+---
+title: "Confiabilidad de una regresion logistica"
+author: "Martin Salinas"
+date: "2024-12-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Evaluacion de un clasificador
+
+- Verdaderos positivos (VP): Cantidad de instancias correctamente clasificadas como positivas.
+- Verdaderos negativos (VN): Cantidad de instancias correctamente clasificadas como negativas.
+- Falsos positivos (FP): Cantidad de instancias incorrectamente clasificadas como positivas.
+- Falsos negativos (FN): Cantidad de instancias incorrectamente clasificadas como negativas.
+
+La matriz de confusion es una tabla que se utiliza para describir el desempeño de un modelo de clasificacion en un conjunto de datos de prueba para los cuales se conoce la verdadera clase.
+
+```{r}
+# Cargar librerías necesarias
+library(caret)
+library(dplyr)
+
+# Paso 1: Preparar los datos de ejemplo
+datos <- iris
+
+# Convertir la variable Species en un problema binario (¿Es versicolor o no?)
+# Creamos una nueva columna llamada 'es_versicolor' que toma valor 1 si es 'versicolor' y 0 en caso contrario.
+datos <- datos %>%
+  mutate(es_versicolor = ifelse(Species == "versicolor", 1, 0))
+
+# Paso 2: Dividir los datos en conjunto de entrenamiento y prueba
+set.seed(123)  # Fijar semilla para reproducibilidad
+datos_entrenamiento <- sample(1:nrow(datos), 0.7 * nrow(datos))
+train.data <- datos[datos_entrenamiento, ]  # Conjunto de entrenamiento
+test.data <- datos[-datos_entrenamiento, ]  # Conjunto de prueba
+
+# Paso 3: Entrenar un modelo de regresión logística
+# Usamos glm con familia 'binomial' para ajustarnos al problema binario
+modelo <- glm(es_versicolor ~ Sepal.Length + Sepal.Width + Petal.Length + Petal.Width,
+              data = train.data, family = "binomial")
+
+# Paso 4: Predecir las probabilidades en el conjunto de prueba
+# Obtenemos probabilidades de que cada instancia sea 'versicolor'
+probabilidades <- predict(modelo, newdata = test.data, type = "response")
+
+# Paso 5: Convertir probabilidades en predicciones binarias
+# Usamos un umbral de 0.5 para decidir si es 'versicolor' (1) o no (0)
+predicciones <- ifelse(probabilidades > 0.5, 1, 0)
+
+# Paso 6: Evaluar el modelo con una matriz de confusión
+# Comparar las predicciones con las etiquetas reales del conjunto de prueba
+matriz_confusion <- confusionMatrix(factor(predicciones, levels = c(0, 1)),
+                                    factor(test.data$es_versicolor, levels = c(0, 1)))
+
+# Imprimir la matriz de confusión
+print(matriz_confusion)
+
+```
+
+Curva ROC
+
+La curva ROC (Receiver Operating Characteristic) es una representación gráfica de la sensibilidad frente a la especificidad de un clasificador binario a través de diferentes umbrales de decisión.
+
+```{r}
+# Cargar librerías necesarias
+library(pROC)
+
+# Paso 7: Calcular la curva ROC
+# Utilizamos la función `roc` del paquete pROC para calcular la curva ROC
+roc_obj <- roc(test.data$es_versicolor, probabilidades)
+
+# Paso 8: Imprimir métricas clave de la curva ROC
+print(roc_obj)  # Incluye el AUC (Área Bajo la Curva)
+
+# Paso 9: Graficar la curva ROC
+plot(roc_obj, col = "blue", lwd = 2, main = "Curva ROC - Modelo Logístico")
+abline(a = 0, b = 1, col = "red", lty = 2)  # Línea diagonal para referencia
+```
+
+
+Para saber la confiabilidad de un modelo de regresión logística estan las siguientes condiciones:
+
+1. Debe existir una relación lineal entre los predictores y la respuesta transdormada.
+2. Los residuos deben ser independientes entre si.
+
+**No deben tener**
+3. Multicolinealidad entre los predictores, que en este caso se evalúa y aborda del mismo modo que para RLM
+
+```{r}
+vif(modelo)
+```
+
+4. Informacion incompleta, que se produce cuando no contamos con observaciones suficientes para todas las posibles combinaciones de los predictores, en especial para algun nivel de una variable categórica.
+
+5. Separación perfecta, que ocurre cuando no hay superposición entre las clases.
+
+6. estimaciones de los coeficientes del modelo dominados por casos influyentes. (No debe ocurrir)
+
+Calculo error
+
+error = (FP + FN) / n
+
+exactitud = (VP + VN) / n
+
+sensibilidad = VP / (VP + FN)
+
+especificidad = VN / (VN + FP)
+
+precision(VPP) = VP / (VP + FP)
+
+valor predictivo negativo (VPN) = VN / (VN + FN)
+
+
