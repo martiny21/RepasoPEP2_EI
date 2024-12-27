@@ -1,0 +1,210 @@
+---
+title: "Apuntes"
+output: html_document
+date: "2024-12-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+if (!requireNamespace('caret', quietly = TRUE)){
+  install.packages('caret')
+}
+library(caret)
+if (!requireNamespace('dplyr', quietly = TRUE)){
+  install.packages('dplyr')
+}
+library(dplyr)
+if (!requireNamespace('ggpubr', quietly = TRUE)){
+  install.packages('ggpubr')
+}
+library(ggpubr)
+if (!requireNamespace('pROC', quietly = TRUE)){
+  install.packages('pROC')
+}
+library(pROC)
+library(data.table)
+library(leaps)
+library(car)
+```
+
+```{r}
+
+#Semilla a utilizar para esta actividad
+set.seed(1111)
+```
+
+En primer lugar vamos a leer los datos
+
+```{r}
+datos <- read.csv2("EP09 Datos.csv")
+head(datos)
+```
+
+Conseguir muestra de 100 hombres
+```{r}
+set.seed(1111)
+
+datos <- datos %>%
+  filter(Gender == 1)
+
+muestra100 <- datos %>%
+  sample_n(100)
+
+muestra100$Gender <- NULL
+
+muestra70 <- muestra100[1:70,]
+muestra30 <- muestra100[71:100,]
+
+```
+
+Seleccionar de forma aleatoria 8 predictores
+
+```{r}
+set.seed(1111)
+
+predictores <- colnames(muestra100)[c(1:22, 24)]
+
+predictores <- predictores %>%
+  sample(8)
+
+predictores
+
+```
+
+Seleccionar una variable predictora para el peso en este caso es Waist.Girth
+
+Ahora hacer un modelo de regresion lineal simple con esta variable para predecir el peso
+
+```{r}
+set.seed(1111)
+
+modelo_simple <- lm(Weight ~ Chest.Girth, data = muestra70)
+
+summary(modelo_simple)
+
+```
+
+$R^2$ = 0,68 indica que el modelo explica el 68% de la variabilidad de la variable dependiente
+El p-valor al ser menor a 0,05 indica que la variable predictora es significativa
+
+Ahora vamos a buscar entre las 8 variables predictores cuales son las que mejor predicen el peso mediante busqueda exhaustiva (entre 2 y 5 variables predictoras)
+
+
+```{r}
+set.seed(1111)
+muestra70_modified <- muestra70 %>%
+  select(predictores, Weight)
+muestra70_modified$Chest.Girth <- NULL
+modelo_multiple <- regsubsets(Weight ~ ., data = muestra70_modified, nbest = 1, nvmax = 5, method = "exhaustive")
+
+plot(modelo_multiple, scale = "bic")
+plot(modelo_multiple, scale = "adjr2")
+
+
+
+```
+
+Ahora agregamos los predictores al modelo de regresión lineal simple
+
+```{r}
+set.seed(1111)
+
+modelo_multiple2 <- lm(Weight ~ Chest.Girth + Waist.Girth + Age + Knee.Girth + Chest.depth + Elbows.diameter, data = muestra70)
+
+summary(modelo_multiple2)
+```
+
+En cuanto a la bondad de ajuste del modelo multiple, el $R^2$ = 0.9056 indica que el modelo explica el 90,56% de la variabilidad de la variable dependiente y $R^2_{ajustado}$ = 0.8966 indica que el modelo ajustado explica el 89,62% de la variabilidad de la variable dependiente, y al ser similares da indicios de que el modelo no esta sobreajustado.
+
+Verifcar confiabilidad del modelo
+
+
+**Condición 1:** La variable *Weight* efectivamente es cuantitativa y continua, por lo que cumple con la condición.
+
+**Condición 2:** Todos los predictores utilizados son cuantitativos, cumpliendo la condición.
+
+**Condición 3:** Se observa que los datos de cada predictor varían en cada observación, cumpliendo la condición.
+
+
+
+
+```{r}
+vif(modelo_multiple2)
+```
+
+eliminamos el predictor Waist.Girth por tener un VIF considerando un rango menor igual a 3
+
+```{r}
+set.seed(1111)
+
+modelo_multiple3 <- lm(Weight ~ Chest.Girth + Age + Knee.Girth + Chest.depth + Elbows.diameter, data = muestra70)
+
+vif(modelo_multiple3)
+summary(modelo_multiple3)
+
+```
+
+```{r}
+residualPlots(modelo_multiple2)
+```
+
+```{r}
+modelo_multiple4 <- lm(Weight ~  Age + Knee.Girth + Chest.depth + Elbows.diameter, data = muestra70)
+
+residualPlots(modelo_multiple4)
+```
+```{r}
+modelo_multiple5 <- update(modelo_multiple4, . ~ . - Age)
+residualPlots(modelo_multiple5)
+```
+
+
+**Condición 4:** Para el modelo 4 que los predictores tienen tienen una relacion lineal, esto confirmado por los test
+
+```{r}
+qq_res <- ggqqplot(data.frame(Residuos = resid(modelo_multiple5)), x = "Residuos", color = "steelblue")
+print(qq_res)
+shapiro.test(resid(modelo_multiple5))
+```
+Modelo no es confiable
+
+
+**Condición 5:** Dado a que solo unos pocos puntos se escapan de la normalidad, asumimos que los residuos siguen una distribución normal
+
+
+```{r}
+#Vereficar homocedasticidad
+ncvTest(modelo_multiple6)
+```
+No hay homocedasticidad y por lo tanto no se cumple la condiciones 6
+
+**Condición 7:** Para esta se utilizará la función *durbinWatsonTest()* sobre el modelo para evaluar la independencia de los residuos:
+
+```{r}
+# verificar independencia de los datos
+durbinWatsonTest(modelo_multiple5)
+```
+
+Dado a un p-valor menor que 0.05 se rechaza la hipotesis nula de que no hay autocorrelación en los residuos
+
+
+
+```{r}
+vif(modelo_multiple5)
+```
+
+```{r}
+influencePlot(modelo_multiple5)
+```
+
+```{r}
+# calidad predictiva del modelo con validación cruzada dejando uno fuera
+fmla = formula("Weight ~ Knee.Girth + Chest.depth + Elbows.diameter")
+weight = train(fmla, data = muestra30, method = "lm", trControl = trainControl(method = "LOOCV"))
+modelo_calidad = weight[["finalModel"]]
+
+print(weight[["pred"]])
+print(weight[["results"]])
+```
+
