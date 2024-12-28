@@ -1,0 +1,297 @@
+---
+title: "Apuntes"
+output: html_document
+date: "2024-12-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+if (!requireNamespace('caret', quietly = TRUE)){
+  install.packages('caret')
+}
+library(caret)
+if (!requireNamespace('dplyr', quietly = TRUE)){
+  install.packages('dplyr')
+}
+library(dplyr)
+if (!requireNamespace('ggpubr', quietly = TRUE)){
+  install.packages('ggpubr')
+}
+library(ggpubr)
+if (!requireNamespace('pROC', quietly = TRUE)){
+  install.packages('pROC')
+}
+library(pROC)
+if (!requireNamespace('data.table', quietly = TRUE)){
+  install.packages('data.table')
+}
+library(data.table)
+if (!requireNamespace('leaps', quietly = TRUE)){
+  install.packages('leaps')
+}
+library(leaps)
+if (!requireNamespace('car', quietly = TRUE)){
+  install.packages('car')
+}
+library(car)
+```
+
+# RECOPILACIÓN DE DATOS
+```{r}
+set.seed(1111)
+datos <- read.csv2("EP09 Datos.csv")
+
+# Seleccionar una muestra aleatoria de 100 hombres
+muestra <- datos %>% filter(Gender == 1) %>% sample_n(100)
+
+# Separar 70 casos de entrenamiento y 30 casos de prueba
+datos_entrenamiento <- muestra[1:70,]
+datos_prueba <- muestra[71:100,]
+
+# Seleccionar de forma aleatoria ocho posibles variables predictoras.
+variables <- colnames(datos)
+i_respuesta <- which(variables == "Weight")
+predictores <- sample(variables[-i_respuesta], 8)
+
+cat("Variables predictoras seleccionadas:\n")
+predictores
+
+cat("\nVariable predictora seleccionada:\nWaist.Girth")
+```
+
+# CONSTRUCCIÓN DE MODELO DE REGRESIÓN LINEAL SIMPLE
+```{r}
+# Buscar variable más correlacionado con la variable respuesta Weight, no incluido en los predictores seleccionados
+datos_resto <- datos %>% select(-predictores)
+correlaciones <- cor(datos_resto, y = datos_resto[["Weight"]])
+
+cat("Correlaciones con la variable respuesta Weight:\n")
+correlaciones
+```
+
+```{r}
+modelo_simple <- lm(Weight ~ Waist.Girth, data = datos_entrenamiento)
+summary(modelo_simple)
+```
+modelo simple: Weight = -8.22353 + 1.02143 * Waist.Girth
+P value (Waist.Girth) = < 2e-16: la variable predictora es significativa.
+se rechaza la hipótesis nula de que el coeficiente de la variable predictora es igual a cero.
+
+R cuadrado: reduce la varianza en un 68.2% con respecto a la media nula.
+
+# BUSCAR ENTRE DOS Y CINCO PREDICTORES DE ENTRE LAS VARIABLES SELECCIONADAS AL AZAR, PARA AGREGAR AL MODELO DE REGRESIÓN LINEAL SIMPLE
+```{r}
+# Metodo exhaustivo
+combinaciones <- regsubsets(Weight ~ Waist.Girth + Knees.diameter + Knee.Girth + 
+                              Chest.Girth + Bitrochanteric.diameter + Calf.Maximum.Girth + 
+                              Navel.Girth + Biiliac.diameter + Age, 
+                            data = datos_entrenamiento, nbest = 1, nvmax = 6)
+plot(combinaciones, scale = "bic")
+plot(combinaciones, scale = "adjr2")
+
+comb_summary <- summary(combinaciones)
+i_min_bic <- which.min(comb_summary$bic)
+#comb_summary$which[i_min_bic,]
+
+#cat("Mejor modelo según BIC:\n")
+modelo_1 <- lm(Weight ~ Waist.Girth + Knees.diameter + Knee.Girth + Chest.Girth + Biiliac.diameter + Age, data = datos_entrenamiento)
+summary(modelo_1)
+```
+P value (Global) = < 2.2e-16: el modelo es significativo.
+Se rechaza la hipótesis nula de que todos los coeficientes son iguales a cero.
+
+R cuadrado: reduce la varianza en un 91.83% con respecto a la media nula.
+
+# EVALUACIÓN DEL MODELO
+
+*Condición 1:* La variable Weight efectivamente es cuantitativa y continua, por lo que cumple con la condición.
+
+*Condición 2:* Todos los predictores utilizados son cuantitativos, cumpliendo la condición.
+
+*Condición 3:* Se observa que los datos de cada predictor varían en cada observación, cumpliendo la condición.
+
+```{r}
+# Se verifica el modelo
+cat("----------------------------\nModelo 1:\n")
+summary(modelo_1)
+
+# Se verifica la multicolinealidad
+cat("----------------------------\nVIF Modelo 1:\n")
+print(vif(modelo_1))
+
+# Se verifica la linealidad
+cat("----------------------------\nResidual plots Modelo 1:\n")
+residualPlots(modelo_1)
+
+# Se verifica la normalidad de los residuos
+cat("----------------------------\nNormalidad de los residuos Modelo 1:\n")
+qq_res <- ggqqplot(data.frame(Residuos = resid(modelo_1)), x = "Residuos", color = "steelblue")
+print(qq_res)
+
+shapiro.test(resid(modelo_1))
+```
+La variable predictora Knees.diameter no se relaciona de forma lineal con la variable respuesta, por lo que se decide eliminarla del modelo.
+
+```{r}
+modelo_2 <- update(modelo_1, . ~ . - Knees.diameter)
+
+# Se verifica el modelo
+cat("----------------------------\nModelo 2:\n")
+summary(modelo_2)
+
+# Se verifica la multicolinealidad
+cat("----------------------------\nVIF Modelo 2:\n")
+print(vif(modelo_2))
+
+# Se verifica la linealidad
+cat("----------------------------\nResidual plots Modelo 2:\n")
+residualPlots(modelo_2)
+
+# Se verifica la normalidad de los residuos
+cat("----------------------------\nNormalidad de los residuos Modelo 2:\n")
+qq_res <- ggqqplot(data.frame(Residuos = resid(modelo_2)), x = "Residuos", color = "steelblue")
+print(qq_res)
+
+shapiro.test(resid(modelo_2))
+```
+
+La variable predictora Chest.Girth no se relaciona de forma lineal con la variable respuesta, por lo que se decide eliminarla del modelo.
+
+```{r}
+modelo_3 <- update(modelo_2, . ~ . - Chest.Girth)
+
+# Se verifica el modelo
+cat("----------------------------\nModelo 3:\n")
+summary(modelo_3)
+
+# Se verifica la multicolinealidad
+cat("----------------------------\nVIF Modelo 3:\n")
+print(vif(modelo_3))
+
+# Se verifica la linealidad
+cat("----------------------------\nResidual plots Modelo 3:\n")
+residualPlots(modelo_3)
+
+# Se verifica la normalidad de los residuos
+cat("----------------------------\nNormalidad de los residuos Modelo 3:\n")
+qq_res <- ggqqplot(data.frame(Residuos = resid(modelo_3)), x = "Residuos", color = "steelblue")
+print(qq_res)
+
+shapiro.test(resid(modelo_3))
+```
+
+*Condición de predictores relacionados linealmente con la respuesta:*
+En la función ResidualPlots las pruebas para todos los predicotres no resultan significativas, es decir, no se presenta mayor curvatura entre las variables predictoras con respecto a los residuos, esto es señal de una relacion lineal entre los predictores y la variable respuesta.
+
+*Condición de normalidad de los residuos, centrada en 0:*
+En la función Shapiro.test se obtiene un p-value de 0.03116, lo que indica que los residuos no siguen una distribución normal. Sin embargo, se decide que esto no afecta significativamente el modelo, puesto que segun
+el grafico obtenido a partir de ggqqplot, se cree que este valor es consecuencia de tres observcaiones criticas
+particulares.
+
+*Condición de multicolinealidad:*
+En la función vif se obtienen valores mayores a 1 y menores a 5 en cada predictor, lo que indica que existe multicolinealidad moderada, pero no es motivo de gran preocupación.
+
+*Condición de homocedasticidad:*
+```{r}
+# Se verifica la homocedasticidad
+cat("----------------------------\nHomocedasticidad Modelo 3:\n")
+ncvTest(modelo_3)
+
+# Graficos marginales
+marginalModelPlots(modelo_3, sd = TRUE)
+```
+En la función ncvTest se obtiene un p-value de 0.053824 superior a nuestro nivel de significancia de 0.05, lo 
+que indica que no podemos descartar que los residuos sean homocedasticos. Ademas, en los graficos marginales se observa que hay un patron claro de varianza constante de los residuos.
+
+*Condición de residuos independientes entre si:*
+```{r}
+# Se verifica la independencia de los residuos
+cat("----------------------------\nIndependencia de los residuos Modelo 3:\n")
+durbinWatsonTest(modelo_3)
+```
+En la función durbinWatsonTest se obtiene un p valor de 0.02 inferior al nivel de significancia de 0.05, por lo que hay evidencia de que no se esta cumpliendo la condicion de independencia.
+Continuaremos con el modelo, teniendo esto presente para la conclusión.
+
+*Condición de observaciones influyentes:*
+```{r}
+# Se verifica la presencia de observaciones influyentes
+influencePlot(modelo_3)
+```
+En la función influencePlot se observa:
+
+- Hat-Values: se identifican 2 observaciones con apalancamiento superior a 2 veces la media, por lo que se consideran posiblemente influyentes.
+- D de Cook < 0.221: menor que 1, por lo que no se consideran observaciones influyentes.
+
+# VER MODELO FINAL
+```{r}
+# Graficar modelo (Weight vs fitted values)
+ggscatter(datos_entrenamiento, y = "Weight", x = "Waist.Girth",
+          color = "steelblue", fill = "steelblue",
+          add = "reg.line", add.params = list(color = "red"))
+```
+
+
+# COMPARACIÓN DE MODELOS
+```{r}
+cat("----------------------------\nComparación de modelos de RLS y RLM:\n")
+print(anova(modelo_simple, modelo_3))
+```
+Con un p-value de 1.969e-11, se rechaza la hipótesis nula de que los modelos son iguales, por lo que se concluye que el modelo 3 es mejor que el modelo simple.
+
+```{r}
+# Calidad predicitva:
+
+# Calcular el error cuadrado promedio para el conjunto de entrenamiento (modelo_3)
+rmse_entrenamiento <- sqrt(mean(resid(modelo_3)^2))
+cat("RMSE Entrenamiento Modelo 3:", rmse_entrenamiento)
+
+# Hacer predicciones para el conjunto de prueba (datos_prueba)
+predicciones <- predict(modelo_3, newdata = datos_prueba)
+
+# Calcular el error cuadrado promedio para el conjunto de prueba
+error <- datos_prueba$Weight - predicciones
+rmse_prueba <- sqrt(mean(error^2))
+cat("\nRMSE Prueba Modelo 3:", rmse_prueba)
+```
+Los valores de RMSE (Root Mean Square Error) para el conjunto de entrenamiento y prueba son 4.23659 y 4.779135, respectivamente. Estos valores son relativamente parecidos, lo que indica que el modelo es generalizable
+
+```{r}
+# Ajustar modelo con validacion cruzada de 5 pliegues
+set.seed(1111)
+
+entrenamiento <- train(Weight ~ Waist.Girth + Knee.Girth + Biiliac.diameter + Age, 
+                       data = muestra, method = "lm", 
+                       trControl = trainControl(method = "cv", number = 5))
+modelo <- entrenamiento$finalModel
+summary(modelo)
+
+# Resultados de cada pliegue
+cat("Errores estimados en cada pliegue:\n")
+entrenamiento$resample
+
+# Resultado estimado para el modelo
+cat("Error estimado para el modelo:\n")
+entrenamiento$results
+```
+
+```{r}
+# Ajustar modelo con validacion cruzada leaving one out
+set.seed(1111)
+
+entrenamiento <- train(Weight ~ Waist.Girth + Knee.Girth + Biiliac.diameter + Age, 
+                       data = muestra, method = "lm", 
+                       trControl = trainControl(method = "LOOCV"))
+modelo <- entrenamiento$finalModel
+summary(modelo)
+
+# Predicciones
+cat("Predicciones:\n")
+entrenamiento$pred
+
+# Resultado estimado para el modelo
+cat("Error estimado para el modelo:\n")
+entrenamiento$results
+```
+
+Los casos de validación cruzada de 5 pliegues y leaving one out arrojan valores de R cuadrado de 0.8444726 y 0.827835 respectivamente, lo que indica que el modelo, aun probado sobre muestras no antes vistas es capaz de explicar un 80% aproximado de la varianza, por lo que decimos que es generalizable.	
