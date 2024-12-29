@@ -1,0 +1,291 @@
+---
+title: "Regresión Logistica"
+author: "Martin Salinas"
+date: "2024-12-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+#Para la regresión logistica
+library(ggpubr)
+
+#Para residualPlots
+library(car)
+
+library(caret)
+```
+
+1. Definir la semilla a utilizar, que corresponde a los últimos cuatro dígitos del RUN (sin considerar el dígito verificador) del integrante de mayor edad del equipo.
+
+```{r}
+semilla <- 1111
+```
+
+2. Seleccionar una muestra de 150 mujeres (si la semilla es un número par) o 150 hombres (si la semilla es impar), asegurando que la mitad tenga estado nutricional “sobrepeso” y la otra mitad “no sobrepeso” en cada caso. Dividir esta muestra en dos conjuntos: los datos de 100 personas (50 con EN “sobrepeso”) para utilizar en la construcción de los modelos y 50 personas (25 con EN “sobrepeso”) para poder evaluarlos.
+
+```{r}
+# Seleccionar muestra de 150 hombres
+
+muestra <- read.csv2("EP09 Datos.csv")
+
+muestra <- muestra %>% 
+  filter(Gender == 1)
+
+muestra$IMC <- muestra$Weight / (muestra$Height/100)^2
+
+# Generar columna para indicar si tiene sobrepeso siendo 1 como que si tiene sobrepeso 
+# y 0 como que no tiene sobrepeso
+
+muestra$EN <- ifelse(muestra$IMC >= 23.2, 1, 0)
+
+muestra_75_OW <- muestra %>% 
+  filter(EN == 1) %>% 
+  sample_n(75, replace = FALSE, seed = semilla)
+
+muestra_75_NOW <- muestra %>% 
+  filter(EN == 0) %>% 
+  sample_n(75, replace = FALSE, seed = semilla)
+
+muestra_train <- rbind(muestra_75_OW[1:50,], muestra_75_NOW[1:50,]) %>% sample_frac(1L, replace = FALSE, seed = semilla)
+muestra_test <- rbind(muestra_75_OW[51:75,], muestra_75_NOW[51:75,]) %>% sample_frac(1L, replace = FALSE, seed = semilla)
+
+#Contar cuantos tienen sobrepeso en la muestra de 100
+
+muestra_train %>% 
+  group_by(EN) %>% 
+  summarise(n = n())
+
+muestra_test %>% 
+  group_by(EN) %>% 
+  summarise(n = n())
+
+```
+
+3. Recordar las ocho posibles variables predictoras seleccionadas de forma aleatoria en el ejercicio anterior.
+
+```{r}
+# Al ser un ejercicio de practica se utilizaran los siguientes predictores
+variables_pred <- c("Knees.diameter", "Knee.Girth", "Chest.Girth", "Bitrochanteric.diameter", 
+               "Calf.Maximum.Girth", "Navel.Girth", "Biiliac.diameter", "Age")
+
+```
+
+4. Seleccionar, de las otras variables, una que el equipo considere que podría ser útil para predecir la clase EN, justificando bien esta selección (idealmente con literatura).
+
+```{r}
+# Al igual que el anterior parte al ser un ejercicio de practica se elige el siguiente predictor
+
+variable_pred <- "Waist.Girth"
+```
+
+5. Usando el entorno R, construir un modelo de regresión logística con el predictor seleccionado en el paso anterior y utilizando de la muestra obtenida.
+
+```{r}
+muestra_trainModificada <- muestra_train
+muestra_trainModificada$Height <- NULL
+muestra_trainModificada$Weight <- NULL
+muestra_trainModificada$IMC <- NULL
+
+# Se construye el modelo de regresión logistica
+modelo <- glm(EN ~ Waist.Girth, data = muestra_trainModificada, family = binomial(link = "logit"))
+
+summary(modelo)
+
+```
+
+6. Usando estas herramientas para la exploración de modelos del entorno R1, buscar entre dos y cinco predictores de entre las variables seleccionadas al azar, recordadas en el punto 3, para agregar al modelo obtenido en el paso 5.
+
+#Regresion escalonada
+
+```{r}
+# Se realiza una busqueda escalonada para encontrar los mejores predictores de variables_pred
+
+print(add1(modelo, scope = c("Waist.Girth", variables_pred), test = "F"))
+
+modelo2 <- update(modelo, . ~ . + Chest.Girth)
+
+cat("\n ------------- Modelo Actualizado --------------- \n")
+print(summary(modelo2))
+```
+
+```{r}
+#Paso 2
+cat("** Step down **\n")
+print(drop1(modelo2, test = "F"))
+cat("\n** step up **\n")
+print(add1(modelo2, scope = c("Waist.Girth", variables_pred), test = "F"))
+
+modelo3 <- update(modelo2, . ~ . + Calf.Maximum.Girth)
+cat("\n\n ------------- Modelo Actualizado --------------- \n")
+print(summary(modelo3))
+```
+
+```{r}
+#Paso 3
+cat("** Step down **\n")
+print(drop1(modelo3, test = "F"))
+cat("\n** step up **\n")
+print(add1(modelo3, scope = c("Waist.Girth", variables_pred), test = "F"))
+
+modelo4 <- update(modelo3, . ~ . + Bitrochanteric.diameter)
+cat("\n\n ------------- Modelo Actualizado --------------- \n")
+print(summary(modelo4))
+```
+
+Dado a que al agregar la variable Bitrochanteric.diameter no aporta mucho y al ver la significancia de este en el modelo tras añadirla es muy baja, se decide no agregarla al modelo y quedarse con el modelo 3.
+
+
+7. Evaluar la confiabilidad de los modelos (i.e. que tengan un buen nivel de ajuste y son generalizables) y “arreglarlos” en caso de que tengan algún problema.
+
+## Condición de linealidad de los predictores con la variable de respuesta
+
+```{r}
+# Se realiza un analisis de los residuos para verificar la linealidad de los predictores
+
+#Dado que es un modelo logistico se agrega el fitted = FALSE para que se muestren los residuos
+residualPlots(modelo3, fitted = FALSE)
+```
+Basandonos en la pruebas que realiza el residualPlots, se puede decir que no hay suficiente evidencia para descartar la relacion lineal de los predictores con la variable de respuesta.
+
+## Condición de independencia entre los residuos
+
+```{r}
+# Se realiza un analisis de los residuos para verificar la independencia entre los residuos
+durbinWatsonTest(modelo3)
+```
+
+Basandonos en la prueba de Durbin-Watson, se puede decir que no hay suficiente evidencia para descartar la independencia entre los residuos.
+
+## Condición de multicolinealidad
+
+```{r}
+# Se busca analiza el factor de inflación de la varianza para verificar que no tenga multicolinealidad el modelo
+vif(modelo3)
+```
+
+Dado a que el VIF de las variables son muy cercanos a 1, se deduce que la multicolinealidad existente es muy baja o casi nula.
+
+## Condición de información incompleta
+
+El modelo no debe presentar informacion incompleta, y se considera que para predictor deben de ser entre 10 y 15 observaciones, asi como por nivel de variable categórica.
+
+Finalmente como solo se tienen 3 predictores se necesitan entre 30 y 50 observaciones, lo cual se cumple teniendo 100 observaciones.
+
+## Condición de separacion perfecta
+
+Se busca que el modelo no tenga separación perfecta por lo que se verifica esto.
+
+Esta implementacion e interpretacion esta mal hecha pero esto. Pero sirve para saber el poder predictivo del modelo 
+```{r}
+# Se verifica si hay separacion perfecta
+probabilidad <- predict(modelo3, type = "response")
+predicciones <- ifelse(probabilidad > 0.5, 1, 0)
+
+matrizConfusion <- confusionMatrix(factor(predicciones, levels = c(0, 1)), 
+                                   factor(muestra_trainModificada$EN, levels = c(0, 1)))
+
+#Alternativa sin usar caret
+
+matrizConfusionAlt <- table(Predicho = predicciones, Observado = muestra_trainModificada$EN)
+
+
+print(matrizConfusion$table)
+
+cat("\n------- Matriz con calculo alternativo ---------\n")
+print(matrizConfusionAlt)
+```
+
+Analisis correcto
+```{r}
+# Condicion de no-separacion perfecta entre variables predictoras
+plot(muestra_trainModificada$Waist.Girth, muestra_trainModificada$Chest.Girth, 
+     col = c("red", "blue"), xlab = "Chest.Girth", ylab = "Navel.Girth")
+plot(muestra_trainModificada$Calf.Maximum.Girth, muestra_trainModificada$Chest.Girth, 
+     col = c("red", "blue"), xlab = "Chest.Girth", ylab = "Navel.Girth")
+plot(muestra_trainModificada$Waist.Girth, muestra_trainModificada$Calf.Maximum.Girth, 
+     col = c("red", "blue"), xlab = "Chest.Girth", ylab = "Navel.Girth")
+
+```
+
+Ahora dado a que no se puede trazar una linea que separe perfectamente los datos, se puede decir que no hay separacion perfecta entre los predictores.
+
+## Condición de no casos influyentes
+
+```{r}
+# Se verifica si hay casos influyentes
+influencePlot(modelo3)
+```
+
+Se pueden ver 3 observaciones con apalancamiento mayor a 2 veces a la media, por lo que se consideran casos posiblemente influyentes.
+
+pero dado a que ninguno de las observaciones presenta un cook's distance mayor a 1, se considera que estos son influyentes.
+
+Finalmente como se cumplen todas las condiciones se puede decir que el modelo es confiable.
+
+8. Usando código estándar1, evaluar el poder predictivo de los modelos con los datos de las 50 personas que no se incluyeron en su construcción en términos de sensibilidad y especificidad.
+
+```{r}
+
+# Con datos de test
+muestra_testModificada <- muestra_test
+muestra_testModificada$Height <- NULL
+muestra_testModificada$Weight <- NULL
+muestra_testModificada$IMC <- NULL
+
+umbral <- 0.5
+
+probabilidad_test <- predict(modelo3, newdata = muestra_testModificada, type = "response")
+predicciones_test <- ifelse(probabilidad_test > umbral, 1, 0)
+
+matrizConfusion_test <- confusionMatrix(factor(predicciones_test, levels = c(0, 1)), 
+                                   factor(muestra_testModificada$EN, levels = c(0, 1)))
+
+#Alternativa sin usar caret
+
+matrizConfusionAlt_test <- table(Predicho = predicciones_test, Observado = muestra_testModificada$EN)
+
+cat("\n------- Matriz de confusion datos de prueba ---------\n")
+print(matrizConfusion_test$table)
+
+cat("\n\n------- Matriz con datos de entrenamiento ---------\n")
+print(matrizConfusion$table)
+
+```
+
+```{r}
+# Se calcula la sensibilidad y especificidad para datos de prueba
+VP <- 21
+VN <- 21
+
+FP <- 4
+FN <- 4
+
+Exactitud <- ((VP + VN) / (VP + VN + FP + FN)) * 100
+sensibilidad <- (VP / (VP + FN)) * 100
+especificidad <- (VN / (VN + FP)) * 100
+
+cat("\n\n------- Sensibilidad y Especificidad datos de prueba ---------\n")
+cat("\nSensibilidad: ", sensibilidad,"%")
+cat("\nEspecificidad: ", especificidad,"%")
+cat("\nExactitud: ", Exactitud,"%")
+
+# Se calcula la sensibilidad y especificidad para datos de entrenamiento
+VP <- 42
+VN <- 41
+
+FP <- 9
+FN <- 8
+
+Exactitud <- ((VP + VN) / (VP + VN + FP + FN)) * 100
+sensibilidad <- (VP / (VP + FN)) * 100
+especificidad <- (VN / (VN + FP)) * 100
+
+cat("\n\n------- Sensibilidad y Especificidad datos de entrenamiento ---------\n")
+cat("\nSensibilidad: ", sensibilidad,"%")
+cat("\nEspecificidad: ", especificidad,"%")
+cat("\nExactitud: ", Exactitud,"%")
+```
+
