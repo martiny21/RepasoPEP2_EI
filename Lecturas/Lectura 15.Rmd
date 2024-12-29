@@ -1,0 +1,328 @@
+---
+title: "Lectura15"
+author: "Sofia Gacitua"
+date: "2024-12-29"
+output: html_document
+---
+
+## Evaluación de un clasificador
+
+-   Verdaderos positivos (VP): Cantidad de instancias correctamente clasificadas como pertenecienentes a la clase positiva.
+
+-   Falsos positivos (FP): Cantidad de instancias erróneamente clasificadas como pertenencientes a la clase negativa.
+
+-   Falsos negativos (FN): Cantidad de instancias erróneamente clasificadas como pertenencientes a la clase negativa.
+
+-   Verdaderos negativos (VN): Cantidad de instancias correctamente clasificadas como pertenecientes a la clase negatva.
+
+-   
+
+    |               |       |         |         |         |
+    |:-------------:|:-----:|:-------:|:-------:|:-------:|
+    |               |       |  Real   |  Real   |         |
+    |               |       |  1 (+)  |  0 (-)  |  Total  |
+    | Clasificación | 1 (+) |   VP    |   FP    | VP + FP |
+    | Clasificación | 0 (-) |   FN    |   VN    | FN + VN |
+    |               | Total | VP + FN | FP + VN |    n    |
+
+-   Exactitud: Proporción de observaciones correctamente clasificadas: (VP + VN) / n.
+
+-   Error: Proporción de observaciones clasificadas de manera equivocada: (FP + FN) / n = 1 - exactitud.
+
+-   Sensibilidad: Indica cuán apto es el clasificador para detectar aquellas observaciones pertenencientes a la clase positiva: VP / (VP + FN).
+
+-   Especificidad: Deternmina como la aptitud del clasificador correctamente asigna observaciones a la clase negativa: VN / (FP + VN).
+
+-   Precisión o valor predictivo positivo (VPP): Indica cuán exacta es la asignación de elementos a la clase positiva (proporción de instancias clasificadas como positivas realmente lo son): VN / (VP + FP).
+
+-   Valor predictivo negativo (VPN): Indica la proporción de instancias correctamente clasificadas como pertenecientes a la clase negativa: VN / (FN + VN).
+
+Curva de calibración (curva ROC), muestra ka relación entre la sensibilidad y la especoficidad del modelo. Permite calcular la calidad del clasificador, mientras más se aleje la curva de la diagonal, mejor es su clasificación.
+
+El "alejamiento" de la diagonal, representado por el área bajo la curva ROC, llamado AUC, varía entre 0 y 1. Un AUC más alto indica un mejor desempeño del modelo en la clasificación. Un AUC = 0.5 se asocia a un clasificador que no discrimina, es decir, su desempeño no es el mejor que el de una clasificación aleatoria.
+
+## Regresió9n logística en R
+
+Usar glm(formula, family binomial(link = "logit"), data), que permite ajustar un modelo de regresión logística.
+
+Script 15.1: Ejemplo de la construcción y evaluación de un modelo de regresión logística en R
+
+Desde las líneas 62 a 73 se preparan los datos para construir y evaluar apropiadamente el modelo de regresión logística. Las líneas 77 y 78 ajutasn y muestran por pantalla el modelo deseado.
+
+Las líneas 80 a 110 evalúan la calidad predictiva del modelo ajustado en el conjunto de entrenamiento. roc(response, predictor), con los argumentos que corresponden a las probabilidades observadas para cada caso y las probabilidades predichas por el modelo de pertenecer a la clase posiitva ("automática"), permite obtener la curva ROC. confusionMatrix(data, reference, positive), con argumentos data, correspondiente a las probabilidades predichas, reference, a las probabilidades observadas, y positive, al nombre de la clase positiva ("automática"), genera una matriz de confusión y obtiene las medidas de un clasificador.
+
+Las líneas 112 a 141 obtiene y despliegan la curva ROC y la matriz de confusión para el conjunto de prueba.
+
+```{r}
+library(caret)
+library(dplyr)
+library(ggpubr)
+library(pROC)
+
+# Cargar y filtrar los datos, teniendo cuidado de dejar
+# "automático" como 2do nivel de la variable "am" para que
+# sea considerada como la clase positiva.
+datos <- mtcars |> filter (wt > 2 & wt < 5) |>
+  mutate (am = factor(am, levels = c(1, 0), labels = c("manual", "automático")))
+
+# Separar conjuntos de entrenamiento y prueba.
+set.seed( 101)
+n <- nrow(datos)
+i_muestra <- sample.int(n = n, size = floor(0.7 * n), replace = FALSE)
+datos_ent <- datos[i_muestra, ]
+datos_pru <- datos[-i_muestra, ]
+
+# Ajustar modelo.
+modelo <- glm(am ~ wt, family = binomial(link = "logit"), data = datos_ent)
+print(summary(modelo))
+
+#
+# Evaluar el modelo con el conjunto de entrenamiento.
+#
+probs_ent <- fitted(modelo)
+
+# Graficar curva ROC, indicando AUC obtenido.
+ROC_ent <- roc(datos_ent[["am"]], probs_ent)
+texto_ent <- sprintf(" AUC = %.2f", ROC_ent[["auc"]])
+g_roc_ent <- ggroc(ROC_ent, color = 2)
+g_roc_ent <- g_roc_ent + geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1),
+                                      linetype = "dashed")
+g_roc_ent <- g_roc_ent + annotate("text", x = 0.3, y = 0.3, label = texto_ent)
+g_roc_ent <- g_roc_ent + theme_pubr()
+print(g_roc_ent)
+
+# Obtener las predicciones.
+umbral <- 0.5
+preds_ent <- sapply(probs_ent,
+                    function(p) ifelse(p >= umbral, "automático", "manual"))
+preds_ent <- factor(preds_ent, levels = levels(datos[["am"]]))
+
+# Obtener y mostrar estadisticas de clasificación en datos de entrenamiento.
+mat_conf_ent <- confusionMatrix(preds_ent, datos_ent[["am"]],
+                                positive = "automático")
+cat("\n\nEvaluación del modelo (cjto. de entrenamiento) :\n")
+cat("----------------------------------------------\n")
+print(mat_conf_ent[["table"]])
+cat("\n")
+cat(sprintf("    Exactitud: %.3f\n", mat_conf_ent[["overall"]]["Accuracy"]))
+cat(sprintf(" Sensibilidad: %.3f\n", mat_conf_ent[["byClass"]]["Sensitivity"]))
+cat(sprintf("Especificidad: %.3f\n", mat_conf_ent[["byClass"]]["Specificity"]))
+
+#
+# Evaluar el modelo con el conjunto de prueba.
+#
+probs_pru <- predict(modelo, datos_pru, type = "response")
+
+# Graficar curva ROC, indicando AUC obtenido.
+ROC_pru <- roc(datos_pru[["am"]], probs_pru)
+texto_pru <- sprintf("AUC = %.2f", ROC_pru[["auc"]])
+g_roc_pru <- ggroc(ROC_pru, color = 2)
+g_roc_pru <- g_roc_pru + geom_segment(aes(x = 1, xend = 0, y = 0, yend = 1),
+                                      linetype = "dashed")
+g_roc_pru <- g_roc_pru + annotate ("text", x = 0.3, y = 0.3, label = texto_pru)
+g_roc_pru <- g_roc_pru + theme_pubr()
+print(g_roc_pru)
+
+# Obtener las predicciones (con el mismo umbral).
+preds_pru <- sapply(probs_pru,
+                    function(p) ifelse(p >= umbral, "automático", "manual"))
+preds_pru <- factor(preds_pru, levels = levels(datos[["am"]]))
+
+# Obtener y mostrar estadísticas de clasificación en datos de prueba.
+mat_conf_pru <- confusionMatrix(preds_pru, datos_pru[["am"]], positive = "automático")
+
+cat("\n\nEvaluación del modelo (cjto. de prueba): \n")
+cat("----------------------------------------\n")
+print(mat_conf_pru[["table"]])
+cat("\n")
+cat(sprintf("    Exactitud: %.3f\n", mat_conf_pru[["overall"]]["Accuracy"]))
+cat(sprintf(" Sensibilidad: %.3f\n", mat_conf_pru[["byClass"]]["Sensitivity"]))
+cat(sprintf("Especificidad: %.3f\n", mat_conf_pru[["byClass"]]["Specificity"]))
+```
+
+Script 15.2: Ajuste de un modelo de regresión logística usando validación cruzada
+
+Se incorpora validación cruzada de 4 pliegues. El modelo obtenido es idéntico al anterior
+
+```{r}
+library(caret)
+library(data.table)
+library(dplyr)
+
+# Cargar y filtrar los datos, teniendo cuidado de dejar
+# "automático" como 2do nivel de la variable "am" para que
+# sea considerada como la clase positiva.
+datos <- mtcars |> filter (wt > 2 & wt < 5) |>
+  mutate(am = factor(am, levels = c(1, 0), labels = c ("manual", "automático")))
+
+# Separar conjuntos de entrenamiento y prueba.
+set.seed(101)
+n <- nrow(datos)
+i_muestra <- sample.int(n = n, size = floor (0.7 * n), replace = FALSE)
+datos_ent <- datos[i_muestra, ]
+datos_pru <- datos[-i_muestra, ]
+
+# Ajustar modelo usando validación cruzada de 4 pliegues.
+modelo_ent <- train(am ~ wt, data = datos_ent, method = "glm",
+                    family = binomial(link = "logit"),
+                    trControl = trainControl(method = "cv", number = 4,
+                                             savePredictions = TRUE))
+modelo <- modelo_ent[["finalModel"]]
+
+cat("Modelo RLog :\n")
+cat("------------\n")
+print(summary(modelo))
+
+# Obtener y mostrar estadísticas de clasificación en datos de entrenamiento.
+mat_conf_ent <- confusionMatrix(modelo_ent[["pred"]][["pred"]],
+                                modelo_ent[["pred"]][["obs"]],
+                                positive = "automático")
+
+cat("\nEvaluación del modelo (cjto. de entrenamiento) :\n")
+cat("----------------------------------------------\n")
+print(mat_conf_ent[["table"]])
+cat("\n")
+cat(sprintf("    Exactitud: %.3f\n", mat_conf_ent[["overall"]]["Accuracy"]))
+cat(sprintf(" Sensibilidad: %.3f\n", mat_conf_ent[["byClass"]]["Sensitivity"]))
+cat(sprintf("Especificidad: %.3f\n", mat_conf_ent[["byClass"]]["Specificity"]))
+
+cat("\n\nDetalle por pliegue:\n")
+cat("--------------------\n")
+resumen <- data.table(modelo_ent[["resample"]][, c (1, 3) ])
+resumen <- rbind(resumen, list(modelo_ent[["results"]][[2]], "Mean"))
+resumen <- rbind(resumen, list(modelo_ent[["results"]][[4]], "SD"))
+print(resumen[1:4, ], row.names = FALSE)
+cat("--------------------\n")
+print(resumen[5:6, ], row.names = FALSE, col.names = "none", digits = 3)
+
+# Obtener las predicciones en los datos de prueba.
+umbral <- 0.5
+probs <- predict(modelo, datos_pru, type = "response")
+preds <- ifelse(probs >= umbral, "automático", "manual")
+preds <- factor(preds, levels = levels(datos[["am"]]))
+
+# Obtener y mostrar estadísticas de clasificación en datos de entrenamiento.
+mat_conf_pru <- confusionMatrix(preds, datos_pru[["am"]], positive = "automático")
+
+cat("\n\nEvaluación del modelo (cjto. de prueba):\n")
+cat("---------------------------------------\n")
+print(mat_conf_pru[["table"]])
+cat("\n")
+cat(sprintf("    Exactitud: %.3f\n", mat_conf_pru[["overall"]]["Accuracy"]))
+cat(sprintf(" Sensibilidad: %.3f\n", mat_conf_pru[["byClass"]]["Sensitivity"]))
+cat(sprintf("Especificidad: %.3f\n", mat_conf_pru[["byClass"]]["Specificity"]))
+```
+
+## Múltiples predictores
+
+Script 15.3: Búsqueda de un modelo de RLog usando regresión escalonada En las líneas 242 y 243 se usa regresión escalonada, obteniendose un modelo que tiene el peso (wt) y la potencia del motor (hp) como predictores.
+
+```{r}
+library(ggpubr)
+library(dplyr)
+
+# Cargar y filtrar los datos (solo predictores numéricos).
+datos <- mtcars |> filter(wt > 2 & wt < 5) |>
+  select(-c("cyl", "vs", "gear", "gear", "carb")) |>
+  mutate(am = factor(am, levels = c(1, 0), labels = c("manual", "automático")))
+
+# Separar conjuntos de entrenamiento y prueba.
+set.seed(101)
+n <- nrow(datos)
+i_muestra <- sample.int(n = n, size = floor(0.7 * n), replace = FALSE)
+datos_ent <- datos[i_muestra, ]
+datos_pru <- datos[-i_muestra, ]
+
+# Modelos inicial y máximo.
+nulo <- glm(am ~ 1, family = binomial(link = "logit"), data = datos_ent)
+maxi <- glm(am ~ ., family = binomial(link = "logit"), data = datos_ent)
+
+# Ajustar modelo con regresión paso a paso escalonada.
+modelo <- step(nulo, scope = list (upper = maxi),
+               direction = "both", trace = FALSE)
+
+cat("Modelo RLog conseguido con regresión escalonada:\n")
+cat("-----------------------------------------------\n")
+print(summary(modelo))
+```
+
+Script 15.4: Búsqueda de un modelo de RLog usando regresión paso a paso hacia adelante
+
+El paso 1 tiene la mayor reducción de AIC. En el paso 2 se observan desviaciones nulas para las variables hp y qsec (no usar) y la única reducción de AIC se consigue agregando mpg como predictor al modelo. En el paso 3 lo mejor es detener la búsqueda y quedarse con el modelo que incluye 2 predictores.
+
+Al comparar los modelos, se observa que agregar mpg no hace un aporte inportante al modelo (0.05444 \> 0.05, por poco), por lo que lo mejor sería evaluar su eliminación. Sin embargo, cuando la muestra es pequeña, no es aconsejable tomar decisiones cuando la evidencia está cerca del borde.
+
+```{r}
+library(ggpubr)
+library(dplyr)
+
+# Imprimir mensajes de advertencia a medida que ocurre.
+opt <- options(warn = 1, width = 26)
+
+# Cargar y filtrar los datos (solo predictores numéricos).
+datos <- mtcars |> filter (wt > 2 & wt < 5) |>
+  select(-c("cyl", "vs", "gear", "carb")) |>
+  mutate(am = factor(am, levels = c(1, 0), labels = c("manual", "automático")))
+
+# Separar conjuntos de entrenamiento y prueba.
+set.seed (101)
+n <- nrow(datos)
+i_muestra <- sample.int(n = n, size = floor(0.7 * n), replace = FALSE)
+datos_ent <- datos[i_muestra, ]
+datos_pru <- datos[-i_muestra, ]
+
+# Definir modelos inicial y máximo.
+nulo <- glm(am ~ 1, family = binomial(link = "logit"), data = datos_ent)
+maxi <- glm(am ~ ., family = binomial(link = "logit"), data = datos_ent)
+
+# Revisar un paso hacia adelante.
+cat("\nPaso 1:\n")
+cat("------\n" )
+print(add1(nulo, scope = maxi))
+
+# Actualizar el modelo.
+modelo1 <- update(nulo, . ~ . + wt)
+
+# Revisar un paso hacia adelante.
+cat("\nPaso 2:\n")
+cat("------\n" )
+print(add1(modelo1, scope = maxi))
+
+# Actualizar el modelo.
+modelo2 <- update (modelo1, . ~. + mpg)
+
+# Revisar un paso hacia adelante.
+cat("\nPaso 3:\n")
+cat("------\n")
+print(add1(modelo2, scope = maxi))
+
+# Mostrar el modelo obtenido.
+cat("\nModelo RLog conseguido con regresión hacia adelante:\n")
+cat("---------------------------------------------------\n")
+print(summary(modelo2))
+
+# Comparar los modelos generados.
+cat("Comparación de los modelos considerados:\n")
+cat("---------------------------------------\n")
+print(anova(nulo, modelo1, modelo2, test = "LRT"))
+
+# Reestabler opción para warnings
+options(warn = opt[[1]], width = opt[[2]])
+```
+
+## Confiabilidad de un modelo de RLog
+
+Verificar cumplimiento de condiciones para que un modelo de regresión logística sea válido:
+
+1.  Debe exister una relación lineal entre los predictores y la respuesta transformada.
+2.  Los residuos deben ser independientes entre sí.
+
+Agregamdo las situciones en que el método de optimización no converja:
+
+3.  Multicolinealidad entre los predictores, que en este caso se evalúa y aborda del mismo modo que para RLM (por ejemplo, mediante el factor de inflación de la varianza o la tolerancia).
+4.  Información incompleta, que se produce cuando no contamos con observaciones suficientes para todas las posibles combinaciones de los predictores, en especial para algún nivel de una variable categórica.
+5.  Separación perfecta, que ocurre cuando no hay superposición entre las clases (es decir, como vimos, cuando los predictores separan ambas clases completamente).
+
+Y, descartando la presencia de datos problrmáticos:
+
+6.  Las estimaciones de los coeficientes del modelo no están dominadas por casos influyentes.
