@@ -199,14 +199,41 @@ print(matrizConfusionAlt)
 ```
 
 Analisis correcto
+
 ```{r}
-# Condicion de no-separacion perfecta entre variables predictoras
+
+# Condicion de no-separacion perfecta entre variables predictoras manualmente
 plot(muestra_trainModificada$Waist.Girth, muestra_trainModificada$Chest.Girth, 
-     col = c("red", "blue"), xlab = "Chest.Girth", ylab = "Navel.Girth")
+     col = c("red", "blue"), xlab = "Waist.Girth", ylab = "Chest.Girth")
 plot(muestra_trainModificada$Calf.Maximum.Girth, muestra_trainModificada$Chest.Girth, 
-     col = c("red", "blue"), xlab = "Chest.Girth", ylab = "Navel.Girth")
+     col = c("red", "blue"), xlab = "Calf.Maximum.Girth", ylab = "Chest.Girth")
 plot(muestra_trainModificada$Waist.Girth, muestra_trainModificada$Calf.Maximum.Girth, 
-     col = c("red", "blue"), xlab = "Chest.Girth", ylab = "Navel.Girth")
+     col = c("red", "blue"), xlab = "Waist.Girth", ylab = "Calf.Maximum.Girth")
+```
+
+
+```{r}
+# Condicion de no-separacion perfecta entre variables predictoras automatizado
+# Obtener los nombres de las variables utilizadas en modelo3
+predictoras_modelo <- names(coef(modelo3))[-1] # Excluir el intercepto
+
+# Crear todas las combinaciones posibles entre las variables predictoras
+combinaciones <- combn(predictoras_modelo, 2, simplify = TRUE)
+
+
+
+for (i in 1:ncol(combinaciones)) {
+  var_x <- combinaciones[1, i]
+  var_y <- combinaciones[2, i]
+  
+  plot(muestra_trainModificada[[var_x]], muestra_trainModificada[[var_y]],
+       col =  c("red", "blue"), # Colorea según la clase
+       pch = 19, 
+       xlab = var_x, ylab = var_y,
+       main = paste("Scatter Plot:", var_x, "vs", var_y))
+}
+
+
 
 ```
 
@@ -287,5 +314,45 @@ cat("\n\n------- Sensibilidad y Especificidad datos de entrenamiento ---------\n
 cat("\nSensibilidad: ", sensibilidad,"%")
 cat("\nEspecificidad: ", especificidad,"%")
 cat("\nExactitud: ", Exactitud,"%")
+```
+
+
+
+Por si acaso para separacion perfecta
+
+```{r}
+set.seed(1111)
+datos <- read.csv2("EP09 Datos.csv")
+
+# crear variable IMC (índice de masa corporal) como el peso de una persona (en kilogramos) dividida por el cuadrado de su estatura (en metros). Para efectos de este ejercicio usaremos dos clases: sobrepeso (1) (IMC ≥ 23,2) y no sobrepeso (0) (IMC < 23,2).
+muestra <- datos %>% mutate(IMC = Weight / ((Height/100)^2)) %>% 
+  mutate(EN = ifelse(IMC >= 23.2, "sobrepeso", "no sobrepeso"))
+
+# Seleccionar una muestra 150 hombres, asegurando que la mitad tenga estado nutricional “Sobrepeso” y la otra mitad “No sobrepeso” en cada caso.
+muestra_a <- muestra %>% filter(Gender == 1 & EN == "sobrepeso") %>% sample_n(75, replace = FALSE)
+muestra_b <- muestra %>% filter(Gender == 1 & EN == "no sobrepeso") %>% sample_n(75, replace = FALSE)
+
+# Dividir esta muestra en dos conjuntos: los datos de 100 personas (50 con EN “sobrepeso”) para utilizar en la construcción de los modelos y 50 personas (25 con EN “sobrepeso”) para poder evaluarlos.
+i_entrenamiento <- sample(1:75, 50, replace = FALSE)
+muestra_entrenamiento <- rbind(muestra_a[i_entrenamiento,], muestra_b[i_entrenamiento,]) %>% sample_frac(1L)
+muestra_prueba <- rbind(muestra_a[-i_entrenamiento,], muestra_b[-i_entrenamiento,]) %>% sample_frac(1L)
+
+variables_no_pred <- c("Biacromial.diameter", "Chest.depth", "Chest.diameter", "Elbows.diameter", 
+                       "Wrists.diameter", "Ankles.diameter", "Shoulder.Girth", "Hip.Girth", 
+                       "Thigh.Girth", "Bicep.Girth", "Forearm.Girth", "Ankle.Minimum.Girth",
+                       "Wrist.Minimum.Girth", "Weight", "Height", "Gender", "IMC")
+
+# Obtener relación entre todos los pares de variables
+nombre_respuesta <- "EN"
+
+otras <- colnames(muestra_entrenamiento)[!colnames(muestra_entrenamiento) %in% variables_no_pred]
+p1_dfl <- muestra_entrenamiento %>% select(all_of(otras)) %>% 
+  pivot_longer(-all_of(nombre_respuesta), names_to = "Variable", values_to = "Valor") %>%
+  mutate(Variable = factor(Variable))
+
+p1 <- ggboxplot(p1_dfl, x = "Variable", y = "Valor", color = nombre_respuesta)
+p1 <- p1 + facet_wrap(~Variable, ncol = 4, scales = "free")
+
+print(p1)
 ```
 
