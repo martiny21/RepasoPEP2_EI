@@ -1,0 +1,170 @@
+---
+title: "Metodos robustos"
+author: "Martin Salinas"
+date: "2024-12-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#libreria para hacer la prueba de yuen y la prueba de yuen con bootstrap
+library(WRS2)
+```
+
+# Metodos robustos
+
+Dentro de los metodos robustos para la tendencia central se encuentran la media truncada y la media winsorizada. La media truncada consiste en eliminar un porcentaje de los datos extremos y calcular la media de los datos restantes. La media winsorizada consiste en reemplazar los datos extremos por los datos mas cercanos a ellos y calcular la media de los datos restantes.
+
+## Prueba de Yuen
+
+### ¨Prueba de Yuen para muestras independientes
+
+La prueba de Yuen es una prueba no parametrica para comparar dos grupos independientes. La prueba de Yuen es una alternativa a la prueba t de Student cuando los datos no cumplen con los supuestos de normalidad y homocedasticidad. La prueba de Yuen es una prueba robusta que no requiere que los datos sigan una distribucion normal.
+
+```{r}
+#Ejemplo de la prueba de Yuen
+
+# Datos simulados
+set.seed(123)
+grupo_A <- c(rnorm(20, mean = 10, sd = 2), 25) # Grupo A con un valor atípico (25)
+grupo_B <- rnorm(20, mean = 12, sd = 2)       # Grupo B
+datos_ind <- data.frame(
+  grupo = factor(c(rep("A", 21), rep("B", 20))),
+  puntaje = c(grupo_A, grupo_B)
+)
+
+
+# Aplicar la prueba de Yuen
+resultado_ind <- yuen(puntaje ~ grupo, data = datos_ind, tr = 0.2)
+
+# Mostrar el resultado
+print(resultado_ind)
+
+```
+
+1. Datos: Creamos un conjunto de datos que contiene dos grupos (grupo_A y grupo_B).
+
+2. Fórmula: La función yuen utiliza una fórmula como respuesta ~ grupo, donde respuesta es la variable dependiente y grupo es la variable categórica que define los grupos.
+
+3. Recorte (tr): Establecemos el nivel de recorte en 20% (tr = 0.2), lo cual elimina los valores extremos (10% superior e inferior de cada grupo) antes de calcular las medias recortadas.
+
+4. Resultado: El resultado incluye el valor t, los grados de libertad (df), y el p-value.
+
+### Prueba de Yuen para muestras pareadas
+
+La prueba de Yuen también se puede utilizar para comparar dos grupos pareados. La prueba de Yuen para muestras pareadas es una alternativa a la prueba t de Student para muestras pareadas cuando los datos.
+
+La función yuend(x, y, tr) requiere dos vectores de datos (los pares de observaciones). A continuación,
+
+```{r}
+# Datos simulados
+set.seed(123)
+antes <- rnorm(15, mean = 10, sd = 2)
+despues <- rnorm(15, mean = 12, sd = 2)
+
+# Prueba de Yuen para datos pareados
+resultado_pareado <- yuend(antes, despues, tr = 0.2)
+
+# Mostrar el resultado
+print(resultado_pareado)
+
+
+```
+
+1. Estadístico de prueba (Test statistic):
+Este valor indica la magnitud y dirección de la diferencia entre las medias recortadas de los pares. En este caso, un valor negativo muestra que antes tiene un promedio recortado más bajo que despues.
+
+2. Diferencia de medias recortadas (Trimmed mean difference):
+La diferencia es de -1.31, lo que indica que, después del recorte, el promedio de antes es 1.96 puntos menor que el promedio de despues
+
+
+
+
+## Prueba de Yuen con bootstrap
+
+La prueba de Yuen con bootstrap es una versión robusta de la prueba de Yuen que utiliza el método de remuestreo bootstrap para calcular los intervalos de confianza y los p-values. 
+
+```{r}
+
+yuenBoot_media <- pb2gen(puntaje ~ grupo, data = datos_ind, est = "mean", nboot = 300)
+
+yuenBoot_meddiana <- pb2gen(puntaje ~ grupo, data = datos_ind, est = "median", nboot = 300)
+
+```
+
+
+## Alternativas a ANOVA
+
+funcion tiway(formula, data, tr, alpha) similar a ANOVA que utiliza medias truncadas
+
+funcion lincon(formula, data, tr, alpha) para analisis post hoc
+
+funcion tiway(formula, data, tr,nboot) similar al anterior utilizando bootstrap
+funcion posthoc para este es mcppb20(formula, data, tr, nboot)
+
+Para utilizar mediana esta la funcion mediway(formula, data, iter) este no posee funciones posthoc
+
+## Comparaciones de una via para multiples grupos correlacionados
+
+Alternativa de ANOVA para muestras correlacionadas cuando violan lo condicion de esfericidad
+
+rmanova(y, groups, blocks, tr) usando medias truncadas y para su analisis post hoc la funcion rmmcp(y, groups, blocks, tr, alpha) 
+
+rmanovab(y, groups, blocks, tr, nboot) esta es igual a la anterior pero utiliza bootsreapping y su analisis post hoc es pairdepb(y, groups, blocks, tr, nboot)
+
+y: vector con la variable dependiente
+groups: vector que indica los grupos
+blocks: vector que indica los casos o bloques
+tr: parametro de poda
+
+
+```{r}
+
+library(WRS2)
+library(tidyverse)
+
+# Construir data frame.
+X <- c(32.0, 32.0, 32.0, 32.0, 32.1, 32.1, 32.1, 32.2, 32.3, 32.3, 32.5, 
+       32.7, 32.7, 32.7, 33.1, 33.4, 33.9, 34.1, 34.2, 34.5, 36.0, 36.6, 
+       36.7, 37.2, 38.0)
+
+Y <- c(33.0, 33.0, 33.0, 33.0, 33.0, 33.3, 33.3, 33.3, 33.3, 33.5, 33.6, 
+       33.7, 33.9, 33.9, 34.2, 34.2, 34.3, 34.3, 34.4, 34.4, 34.5, 34.6,
+       36.4, 38.9, 40.2)
+
+Z <- c(32.0, 32.2, 32.5, 32.6, 32.7, 32.7, 32.7, 33.0, 33.2, 33.4, 33.6, 
+       33.6, 33.9, 34.1, 34.2, 34.4, 34.4, 34.5, 34.6, 34.7, 36.3, 36.6, 
+       36.7, 38.9, 39.2)
+
+instancia <- 1:length(X)
+
+datos <- data.frame(instancia, X, Y, Z)
+
+datos <- datos %>% pivot_longer(c("X", "Y", "Z"), names_to = "algoritmo", values_to = "tiempo")
+
+datos[["algoritmo"]] <- factor(datos[["algoritmo"]])
+
+# Fijar nivel de significación.
+alfa <- 0.05
+
+# Aplicar alternativa robusta para ANOVA de una vía con
+# muestras correlacionadas.
+gamma <- 0.2
+
+prueba <- rmanova(y = datos[["tiempo"]], groups = datos[["algoritmo"]],
+                  blocks = datos[["instancia"]], tr = gamma)
+
+print(prueba)
+
+if(prueba$p.value < alfa) {
+  cat("\nProcedimiento post-hoc\n\n")
+  
+  post_hoc <- rmmcp(y = datos[["tiempo"]], groups = datos[["algoritmo"]],
+                    blocks = datos[["instancia"]], tr = gamma, alpha = alfa)
+  
+  print(post_hoc)
+}
+
+```
+
